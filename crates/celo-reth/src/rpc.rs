@@ -7,7 +7,6 @@
 use crate::{
     primitives::{CeloPrimitives, CeloTransactionSigned},
     receipt::CeloReceipt,
-    signed_tx::CeloConsensusTx,
 };
 use alloy_consensus::{ReceiptWithBloom, Transaction, error::ValueError};
 use alloy_eips::Encodable2718;
@@ -190,7 +189,7 @@ impl TryIntoSimTx<CeloTransactionSigned> for CeloTransactionRequest {
                     celo_tx =
                         CeloTxEnvelope::Cip64(alloy_consensus::Signed::new_unhashed(cip64, sig));
                 }
-                CeloConsensusTx::new(celo_tx)
+                celo_tx
             })
             .map_err(|e| e.map(|inner| Self { inner, fee_currency }))
     }
@@ -319,16 +318,13 @@ impl SignableTxRequest<CeloTransactionSigned> for CeloTransactionRequest {
                 fee_currency: Some(fc),
             };
             let sig = signer.sign_transaction(&mut cip64).await?;
-            Ok(CeloConsensusTx::new(CeloTxEnvelope::Cip64(alloy_consensus::Signed::new_unhashed(
-                cip64, sig,
-            ))))
+            Ok(CeloTxEnvelope::Cip64(alloy_consensus::Signed::new_unhashed(cip64, sig)))
         } else {
             SignableTxRequest::<op_alloy_consensus::OpTxEnvelope>::try_build_and_sign(
                 self.inner, signer,
             )
             .await
             .map(op_tx_to_celo)
-            .map(CeloConsensusTx::new)
         }
     }
 }
@@ -1110,7 +1106,7 @@ pub fn celo_fee_history_module(api: Arc<CeloFeeApi>) -> jsonrpsee::RpcModule<Arc
                     // would fail, and `cip64_fee_history_tip` would return 0,
                     // underreporting tips in reward percentiles.
                     let cip64_fc = if tx.ty() == cip64_ty {
-                        let raw_fc = match tx.inner.inner.envelope() {
+                        let raw_fc = match &*tx.inner.inner {
                             CeloTxEnvelope::Cip64(signed) => signed.tx().fee_currency,
                             _ => None,
                         };
@@ -1972,7 +1968,7 @@ mod tests {
         };
 
         let tx = req.try_into_sim_tx().expect("EIP-1559 with fee_currency should succeed");
-        match tx.envelope() {
+        match &tx {
             CeloTxEnvelope::Cip64(signed) => {
                 assert_eq!(signed.tx().fee_currency, Some(fc));
             }

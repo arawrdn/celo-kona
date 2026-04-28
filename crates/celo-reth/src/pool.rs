@@ -5,7 +5,7 @@
 //! pending/queued classification and replacement logic work correctly for transactions
 //! that pay fees in non-native currencies.
 
-use crate::{primitives::CeloTransactionSigned, signed_tx::CeloConsensusTx};
+use crate::primitives::CeloTransactionSigned;
 use alloy_consensus::Transaction;
 use alloy_eips::{
     Typed2718, eip2930::AccessList, eip4844::BlobTransactionValidationError,
@@ -329,54 +329,17 @@ impl PoolTransaction for CeloPoolTx {
     type Pooled = CeloPooledTransaction;
 
     fn clone_into_consensus(&self) -> Recovered<Self::Consensus> {
-        let native_max_fee = self.native_max_fee_per_gas;
-        let native_max_priority_fee = self.native_max_priority_fee_per_gas.unwrap_or(0);
-        self.inner.clone_into_consensus().map(|tx| {
-            CeloConsensusTx::with_native_fees(
-                tx.into_envelope(),
-                native_max_fee,
-                native_max_priority_fee,
-            )
-        })
+        self.inner.clone_into_consensus()
     }
 
     fn into_consensus(self) -> Recovered<Self::Consensus> {
-        // Carry the pool-validator-computed native-equivalent fee values onto the
-        // consensus wrapper. This is the whole point of `CeloConsensusTx`:
-        // op-reth's payload builder calls `effective_tip_per_gas(base_fee_in_wei)`
-        // on the consensus tx *after* `into_consensus()`, and for CIP-64 the
-        // envelope's own `max_fee_per_gas` is fee-currency-denominated and can't
-        // be compared to the native base fee. Attaching the cached native fees
-        // here lets that trait method return the correct tip for CIP-64.
-        let native_max_fee = self.native_max_fee_per_gas;
-        let native_max_priority_fee = self.native_max_priority_fee_per_gas.unwrap_or(0);
-        self.inner.into_consensus().map(|tx| {
-            CeloConsensusTx::with_native_fees(
-                tx.into_envelope(),
-                native_max_fee,
-                native_max_priority_fee,
-            )
-        })
+        self.inner.into_consensus()
     }
 
     fn into_consensus_with2718(
         self,
     ) -> reth_primitives_traits::WithEncoded<Recovered<Self::Consensus>> {
-        let native_max_fee = self.native_max_fee_per_gas;
-        let native_max_priority_fee = self.native_max_priority_fee_per_gas.unwrap_or(0);
-        let with_encoded = self.inner.into_consensus_with2718();
-        // Preserve the cached 2718 encoding while re-wrapping the inner
-        // CeloConsensusTx with native-equivalent fees. The cached fees are
-        // non-consensus (invisible to encoding/hashing), so the bytes remain valid.
-        with_encoded.map(|rec| {
-            rec.map(|tx| {
-                CeloConsensusTx::with_native_fees(
-                    tx.into_envelope(),
-                    native_max_fee,
-                    native_max_priority_fee,
-                )
-            })
-        })
+        self.inner.into_consensus_with2718()
     }
 
     fn from_pooled(tx: Recovered<Self::Pooled>) -> Self {
